@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>生コン注文フォーム</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body style="margin:0;padding:0;">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback, useMemo } = React;
+
+    const MONTHS = Array.from({ length: 12 }, (_, i) => i + 1);
+    const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+    const HOURS = Array.from({ length: 24 }, (_, i) => i);
+    const MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
+    const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+    const SHIKEN_OPTIONS = [
+      { id: "daiko", label: "現場代行" },
+      { id: "daiko_shitei", label: "現場代行指定有" },
+      { id: "enshun", label: "塩分含有量" },
+      { id: "koji", label: "工場採取" },
+      { id: "sonota", label: "その他" },
+    ];
+
+    const MIX_FIELDS = [
+      { key: "mix1", placeholder: "21", hint: "呼び強度" },
+      { key: "mix2", placeholder: "8",  hint: "スランプ" },
+      { key: "mix3", placeholder: "25", hint: "骨材寸法" },
+    ];
+
+    const REQUIRED_FIELDS = [
+      "name","tel","genba","month","day","hour","minute",
+      "mix1","mix2","mix3","mixType","qty","qtyType","car"
+    ];
+
+    const STORAGE_KEY = "concrete_order_history_v2";
+    const DRAFT_KEY   = "concrete_order_draft_v2";
+
+    const defaultForm = () => ({
+      name:"", tel:"", genba:"",
+      month:"", day:"", weekday:"",
+      hour:"", minute:"",
+      mix1:"", mix2:"", mix3:"", mixType:"",
+      qty:"", trucks:"", qtyType:"",
+      car:"",
+      keikakusho:"", shiken:"",
+      shikenOptions:[], sonotaText:"",
+    });
+
+    function calcWeekday(month, day) {
+      if (!month || !day) return "";
+      const now = new Date();
+      const year = Number(month) < now.getMonth() + 1
+        ? now.getFullYear() + 1
+        : now.getFullYear();
+      const d = new Date(year, Number(month) - 1, Number(day));
+      return isNaN(d) ? "" : WEEKDAYS[d.getDay()];
+    }
+
+    function loadHistory() {
+      try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"); }
+      catch { return []; }
+    }
+    function saveHistory(form) {
+      try {
+        const hist = loadHistory();
+        const entry = { name: form.name, tel: form.tel, genba: form.genba };
+        const filtered = hist.filter(h => h.name !== entry.name || h.genba !== entry.genba);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify([entry, ...filtered].slice(0, 10)));
+      } catch {}
+    }
+
+    const BASE_INPUT = {
+      background: "#1e2023",
+      border: "1.5px solid #35383d",
+      borderRadius: "10px",
+      padding: "10px 12px",
+      color: "#f0f0f0",
+      fontSize: "14px",
+      width: "100%",
+      outline: "none",
+      fontFamily: "'Noto Sans JP', sans-serif",
+      boxSizing: "border-box",
+    };
+    const ERR_INPUT = { borderColor: "#ef4444", background: "#2a1a1a" };
+    const GREEN = "#06C755";
+
+    function StyledInput({ value, onChange, placeholder, type = "text", error, style = {}, step, min }) {
+      const [focused, setFocused] = useState(false);
+      return (
+        <input
+          style={{
+            ...BASE_INPUT,
+            ...(error ? ERR_INPUT : {}),
+            ...(focused ? { borderColor: error ? "#ef4444" : GREEN } : {}),
+            ...style,
+          }}
+          type={type}
+          placeholder={placeholder}
+          value={value}
+          step={step}
+          min={min}
+          onChange={onChange}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+        />
+      );
+    }
+
+    function StyledSelect({ value, onChange, options, placeholder, error, style = {} }) {
+      return (
+        <select
+          style={{
+            ...BASE_INPUT,
+            ...(error ? ERR_INPUT : {}),
+            cursor: "pointer",
+            appearance: "none",
+            ...style,
+          }}
+          value={value}
+          onChange={onChange}
+        >
+          <option value="">{placeholder}</option>
+          {options.map(o => (
+            <option key={o.value ?? o} value={o.value ?? o}>{o.label ?? o}</option>
+          ))}
+        </select>
+      );
+    }
+
+    function Chip({ label, selected, onClick, error }) {
+      return (
+        <button
+          onClick={onClick}
+          style={{
+            padding: "8px 16px",
+            borderRadius: "999px",
+            border: `2px solid ${selected ? GREEN : error ? "#ef4444" : "#35383d"}`,
+            background: selected ? GREEN : "transparent",
+            color: selected ? "#fff" : error ? "#ef4444" : "#9ca3af",
+            fontWeight: 700,
+            fontSize: "13px",
+            cursor: "pointer",
+            transition: "all 0.15s",
+            fontFamily: "'Noto Sans JP', sans-serif",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {label}
+        </button>
+      );
+    }
+
+    function Section({ icon, title, children }) {
+      return (
+        <div style={{ marginBottom: "20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px" }}>
+            <span style={{ fontSize: "18px" }}>{icon}</span>
+            <span style={{ color: "#f0f0f0", fontWeight: 700, fontSize: "14px" }}>{title}</span>
+            <div style={{ flex: 1, height: "1px", background: "#2a2d32" }} />
+          </div>
+          {children}
+        </div>
+      );
+    }
+
+    function Label({ text, required, error }) {
+      return (
+        <div style={{ marginBottom: "5px", display: "flex", alignItems: "center", gap: "6px" }}>
+          <span style={{ color: error ? "#ef4444" : GREEN, fontSize: "11px", fontWeight: 700, letterSpacing: "1px" }}>
+            {text}
+          </span>
+          {required && <span style={{ color: "#ef4444", fontSize: "10px" }}>必須</span>}
+          {error && <span style={{ color: "#ef4444", fontSize: "11px" }}>⚠ 未入力</span>}
+        </div>
+      );
+    }
+
+    function ConcreteOrderForm() {
+      const [form, setForm] = useState(defaultForm());
+      const [copied, setCopied] = useState(false);
+      const [errors, setErrors] = useState({});
+      const [history, setHistory] = useState([]);
+      const [showHistory, setShowHistory] = useState(false);
+      const [showPreview, setShowPreview] = useState(false);
+      const [sent, setSent] = useState(false);
+
+      useEffect(() => {
+        setHistory(loadHistory());
+        try {
+          const saved = JSON.parse(localStorage.getItem(DRAFT_KEY));
+          if (saved) setForm(saved);
+        } catch {}
+      }, []);
+
+      useEffect(() => {
+        try { localStorage.setItem(DRAFT_KEY, JSON.stringify(form)); } catch {}
+      }, [form]);
+
+      const set = useCallback((key, val) => {
+        setForm(f => {
+          const next = { ...f, [key]: val };
+          if (key === "month" || key === "day") {
+            next.weekday = calcWeekday(
+              key === "month" ? val : f.month,
+              key === "day"   ? val : f.day
+            );
+          }
+          return next;
+        });
+        setErrors(e => ({ ...e, [key]: false }));
+        setSent(false);
+      }, []);
+
+      const toggleShikenOpt = useCallback((id) => {
+        setForm(f => {
+          const opts = f.shikenOptions.includes(id)
+            ? f.shikenOptions.filter(o => o !== id)
+            : [...f.shikenOptions, id];
+          return { ...f, shikenOptions: opts };
+        });
+        setSent(false); // 修正1: 試験種別変更時も送信済みをリセット
+      }, []);
+
+      // 修正4: useCallback 化
+      const applyHistory = useCallback((entry) => {
+        setForm(f => ({ ...f, name: entry.name, tel: entry.tel, genba: entry.genba }));
+        setShowHistory(false);
+      }, []);
+
+      const handleReset = useCallback(() => {
+        setForm(defaultForm());
+        setErrors({});
+        setSent(false);
+        try { localStorage.removeItem(DRAFT_KEY); } catch {}
+      }, []);
+
+      const validate = useCallback(() => {
+        const errs = {};
+        REQUIRED_FIELDS.forEach(k => { if (!form[k] && form[k] !== 0) errs[k] = true; });
+        setErrors(errs);
+        return Object.keys(errs).length === 0;
+      }, [form]);
+
+      const buildText = () => {
+        const shikenLabel = form.shiken === "有"
+          ? `有 (${form.shikenOptions.map(id => {
+              if (id === "sonota") return `その他: ${form.sonotaText}`;
+              return SHIKEN_OPTIONS.find(o => o.id === id)?.label ?? id;
+            }).join(" / ")})`
+          : form.shiken || "－";
+
+        const hh = form.hour !== "" ? String(form.hour).padStart(2, "0") : "　";
+        const mm = form.minute !== "" ? String(form.minute).padStart(2, "0") : "　";
+        const trucks = form.trucks ? `　${form.trucks}台` : "";
+
+        return `👷【施工者名】${form.name || "－"}
+📞【連絡先】${form.tel || "－"}
+🚧【現場名】${form.genba || "－"}
+📅【施工日時】${form.month || "　"}月${form.day || "　"}日(${form.weekday || "　"}) ${hh}時${mm}分
+🧱【配合】${form.mix1 || "　"}ー${form.mix2 || "　"}ー${form.mix3 || "　"}（${form.mixType || "　"}）
+📦【数量】${form.qty || "　"}㎥${trucks}（${form.qtyType || "　"}）
+🚚【車種】${form.car || "－"}
+📋【書類・試験】
+　配合計画書：${form.keikakusho || "－"}
+　試験：${shikenLabel}`;
+      };
+
+      const text = useMemo(buildText, [form]);
+
+      // 修正2: file:// でのコピー失敗に対するフォールバック
+      const handleCopy = useCallback(() => {
+        if (!validate()) return;
+        const doCopy = () => {
+          if (navigator.clipboard && window.isSecureContext) {
+            return navigator.clipboard.writeText(text);
+          }
+          const el = document.createElement("textarea");
+          el.value = text;
+          el.style.position = "fixed";
+          el.style.opacity = "0";
+          document.body.appendChild(el);
+          el.select();
+          document.execCommand("copy");
+          document.body.removeChild(el);
+          return Promise.resolve();
+        };
+        doCopy().then(() => {
+          setCopied(true);
+          saveHistory(form);
+          setHistory(loadHistory());
+          setTimeout(() => setCopied(false), 2500);
+        });
+      }, [validate, text, form]);
+
+      const handleLine = useCallback(() => {
+        if (!validate()) return;
+        saveHistory(form);
+        setHistory(loadHistory());
+        setSent(true);
+        window.open(`https://line.me/R/msg/text/?${encodeURIComponent(text)}`, "_blank");
+      }, [validate, text, form]);
+
+      // 修正5: useMemo でメモ化
+      const missingCount = useMemo(
+        () => REQUIRED_FIELDS.filter(k => !form[k] && form[k] !== 0).length,
+        [form]
+      );
+      const isComplete = missingCount === 0;
+
+      return (
+        <div style={{ fontFamily: "'Noto Sans JP', sans-serif", background: "#13151a", minHeight: "100vh", paddingBottom: "40px" }}>
+          <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet" />
+
+          <div style={{
+            background: `linear-gradient(135deg, ${GREEN} 0%, #00a344 100%)`,
+            padding: "14px 16px",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            position: "sticky", top: 0, zIndex: 100,
+            boxShadow: "0 2px 20px rgba(6,199,85,0.3)",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <span style={{ fontSize: "20px" }}>🏗️</span>
+              <span style={{ color: "white", fontWeight: 900, fontSize: "15px", letterSpacing: "1px" }}>生コン注文フォーム</span>
+            </div>
+            <div style={{ display: "flex", gap: "6px" }}>
+              {history.length > 0 && (
+                <button onClick={() => setShowHistory(v => !v)} style={{
+                  background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "8px",
+                  color: "white", fontSize: "11px", fontWeight: 700, padding: "6px 10px", cursor: "pointer",
+                  fontFamily: "'Noto Sans JP', sans-serif",
+                }}>📋 履歴</button>
+              )}
+              <button onClick={handleReset} style={{
+                background: "rgba(255,255,255,0.2)", border: "none", borderRadius: "8px",
+                color: "white", fontSize: "11px", fontWeight: 700, padding: "6px 10px", cursor: "pointer",
+                fontFamily: "'Noto Sans JP', sans-serif",
+              }}>🔄 クリア</button>
+            </div>
+          </div>
+
+          <div style={{ background: "#1e2023", height: "4px" }}>
+            <div style={{
+              height: "100%",
+              width: `${((REQUIRED_FIELDS.length - missingCount) / REQUIRED_FIELDS.length) * 100}%`,
+              background: isComplete ? GREEN : "#f59e0b",
+              transition: "width 0.4s ease",
+            }} />
+          </div>
+
+          {showHistory && history.length > 0 && (
+            <div style={{
+              margin: "8px 16px", background: "#1e2023",
+              border: "1px solid #35383d", borderRadius: "12px", overflow: "hidden",
+              boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+            }}>
+              <div style={{ padding: "10px 14px", color: "#9ca3af", fontSize: "11px", fontWeight: 700, borderBottom: "1px solid #2a2d32" }}>
+                📋 最近の注文から入力
+              </div>
+              {history.map((h, i) => (
+                <button key={i} onClick={() => applyHistory(h)} style={{
+                  width: "100%", padding: "10px 14px", background: "transparent",
+                  border: "none", borderBottom: i < history.length - 1 ? "1px solid #1a1c20" : "none",
+                  color: "#e0e0e0", textAlign: "left", cursor: "pointer",
+                  fontFamily: "'Noto Sans JP', sans-serif",
+                }}>
+                  <div style={{ fontWeight: 700, fontSize: "13px" }}>👷 {h.name}</div>
+                  <div style={{ color: "#9ca3af", fontSize: "11px", marginTop: "2px" }}>🚧 {h.genba}　📞 {h.tel}</div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div style={{ maxWidth: "480px", margin: "0 auto", padding: "16px" }}>
+
+            {Object.keys(errors).length > 0 && (
+              <div style={{
+                background: "#2a1a1a", border: "1px solid #ef4444",
+                borderRadius: "10px", padding: "12px 14px", marginBottom: "16px",
+              }}>
+                <span style={{ color: "#ef4444", fontWeight: 700, fontSize: "13px" }}>
+                  ⚠ {Object.keys(errors).length}項目が未入力です。確認してください。
+                </span>
+              </div>
+            )}
+
+            <Section icon="👷" title="基本情報">
+              <div style={{ marginBottom: "12px" }}>
+                <Label text="施工者名" required error={errors.name} />
+                <StyledInput value={form.name} onChange={e => set("name", e.target.value)} placeholder="例）田中建設　田中" error={errors.name} />
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <Label text="連絡先（電話番号）" required error={errors.tel} />
+                <StyledInput value={form.tel} onChange={e => set("tel", e.target.value)} placeholder="例）090-0000-0000" type="tel" error={errors.tel} />
+              </div>
+              <div>
+                <Label text="現場名" required error={errors.genba} />
+                <StyledInput value={form.genba} onChange={e => set("genba", e.target.value)} placeholder="例）〇〇マンション新築工事" error={errors.genba} />
+              </div>
+            </Section>
+
+            <Section icon="📅" title="施工日時">
+              <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
+                <div style={{ flex: "1 1 70px" }}>
+                  <Label text="月" required error={errors.month} />
+                  <StyledSelect value={form.month} onChange={e => set("month", e.target.value)} placeholder="月" error={errors.month} options={MONTHS.map(m => ({ value: m, label: `${m}月` }))} />
+                </div>
+                <div style={{ flex: "1 1 70px" }}>
+                  <Label text="日" required error={errors.day} />
+                  <StyledSelect value={form.day} onChange={e => set("day", e.target.value)} placeholder="日" error={errors.day} options={DAYS.map(d => ({ value: d, label: `${d}日` }))} />
+                </div>
+                <div style={{ flex: "0 0 56px" }}>
+                  <Label text="曜日" />
+                  <div style={{ ...BASE_INPUT, textAlign: "center", color: form.weekday ? GREEN : "#555", fontWeight: 700, fontSize: "16px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {form.weekday || "自動"}
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <div style={{ flex: 1 }}>
+                  <Label text="時" required error={errors.hour} />
+                  <StyledSelect value={form.hour} onChange={e => set("hour", e.target.value)} placeholder="時" error={errors.hour} options={HOURS.map(h => ({ value: h, label: `${h}時` }))} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <Label text="分" required error={errors.minute} />
+                  <StyledSelect value={form.minute} onChange={e => set("minute", e.target.value)} placeholder="分" error={errors.minute} options={MINUTES.map(m => ({ value: m, label: `${String(m).padStart(2,"0")}分` }))} />
+                </div>
+              </div>
+            </Section>
+
+            <Section icon="🧱" title="配合">
+              <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+                {MIX_FIELDS.map(f => (
+                  <div key={f.key} style={{ flex: 1 }}>
+                    <Label text={f.hint} required error={errors[f.key]} />
+                    <StyledInput value={form[f.key]} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} type="number" min="0" error={errors[f.key]} style={{ textAlign: "center" }} />
+                  </div>
+                ))}
+              </div>
+              <Label text="セメント種別" required error={errors.mixType} />
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                {[["N", "N（普通）"], ["BB", "BB（高炉）"], ["H", "H（早強）"]].map(([code, label]) => (
+                  <Chip key={code} label={label} selected={form.mixType === code} error={errors.mixType} onClick={() => set("mixType", code)} />
+                ))}
+              </div>
+            </Section>
+
+            <Section icon="📦" title="数量・車種">
+              <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+                <div style={{ flex: "1 1 100px" }}>
+                  <Label text="数量（㎥）" required error={errors.qty} />
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <StyledInput value={form.qty} onChange={e => set("qty", e.target.value)} placeholder="例）3.0" type="number" step="0.5" min="0" error={errors.qty} />
+                    <span style={{ color: "#9ca3af", fontSize: "13px", whiteSpace: "nowrap" }}>㎥</span>
+                  </div>
+                </div>
+                <div style={{ flex: "0 0 90px" }}>
+                  <Label text="台数（任意）" />
+                  <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                    <StyledInput value={form.trucks} onChange={e => set("trucks", e.target.value)} placeholder="3" type="number" min="0" />
+                    <span style={{ color: "#9ca3af", fontSize: "13px" }}>台</span>
+                  </div>
+                </div>
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <Label text="打設区分" required error={errors.qtyType} />
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {["出切", "待ち", "位"].map(t => (
+                    <Chip key={t} label={t} selected={form.qtyType === t} error={errors.qtyType} onClick={() => set("qtyType", t)} />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <Label text="車種" required error={errors.car} />
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {["大型", "中型", "小型"].map(t => (
+                    <Chip key={t} label={t} selected={form.car === t} error={errors.car} onClick={() => set("car", t)} />
+                  ))}
+                </div>
+              </div>
+            </Section>
+
+            <Section icon="📋" title="書類・試験">
+              <div style={{ marginBottom: "12px" }}>
+                <Label text="配合計画書" />
+                <div style={{ display: "flex", gap: "8px" }}>
+                  {["有", "無"].map(v => (
+                    <Chip key={v} label={v} selected={form.keikakusho === v} onClick={() => set("keikakusho", v)} />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <Label text="試験" />
+                <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+                  {["無", "有"].map(v => (
+                    <Chip key={v} label={v} selected={form.shiken === v} onClick={() => set("shiken", v)} />
+                  ))}
+                </div>
+                {form.shiken === "有" && (
+                  <div style={{ background: "#1a1d22", border: "1px solid #2a2d32", borderRadius: "10px", padding: "12px" }}>
+                    <Label text="試験種別（複数選択可）" />
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "8px" }}>
+                      {SHIKEN_OPTIONS.map(opt => (
+                        <Chip key={opt.id} label={opt.label} selected={form.shikenOptions.includes(opt.id)} onClick={() => toggleShikenOpt(opt.id)} />
+                      ))}
+                    </div>
+                    {form.shikenOptions.includes("sonota") && (
+                      <StyledInput value={form.sonotaText} onChange={e => set("sonotaText", e.target.value)} placeholder="その他の内容を入力" />
+                    )}
+                  </div>
+                )}
+              </div>
+            </Section>
+
+            <div style={{ marginBottom: "12px" }}>
+              <button onClick={() => setShowPreview(v => !v)} style={{
+                width: "100%", background: "transparent",
+                border: "1px solid #2a2d32", borderRadius: "10px",
+                color: "#9ca3af", fontSize: "12px", fontWeight: 700,
+                padding: "8px", cursor: "pointer", marginBottom: "8px",
+                fontFamily: "'Noto Sans JP', sans-serif",
+              }}>
+                {showPreview ? "▲ プレビューを閉じる" : "▼ LINEプレビューを確認する"}
+              </button>
+
+              {showPreview && (
+                <div style={{ borderRadius: "16px", overflow: "hidden", boxShadow: "0 8px 32px rgba(0,0,0,0.5)" }}>
+                  <div style={{ background: GREEN, padding: "10px 16px", display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ color: "white", fontSize: "16px" }}>💬</span>
+                    <span style={{ color: "white", fontWeight: 700, fontSize: "13px" }}>生コン工場</span>
+                  </div>
+                  <div style={{ background: "#8cabd9", padding: "16px 12px" }}>
+                    <div style={{ display: "flex", alignItems: "flex-end", gap: "6px" }}>
+                      <div style={{ width: "36px", height: "36px", borderRadius: "50%", background: "#f59e0b", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" }}>👷</div>
+                      <div style={{ background: "white", borderRadius: "0 12px 12px 12px", padding: "10px 14px", maxWidth: "82%", boxShadow: "0 2px 8px rgba(0,0,0,0.15)" }}>
+                        <pre style={{ color: "#222", fontSize: "13px", lineHeight: "1.85", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, fontFamily: "'Noto Sans JP', sans-serif" }}>{text}</pre>
+                      </div>
+                      <div style={{ color: "rgba(255,255,255,0.85)", fontSize: "10px", flexShrink: 0, paddingBottom: "2px" }}>
+                        {new Date().getHours()}:{String(new Date().getMinutes()).padStart(2, "0")}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {!isComplete && (
+              <div style={{ textAlign: "center", color: "#f59e0b", fontSize: "12px", marginBottom: "10px", fontWeight: 700 }}>
+                あと {missingCount} 項目を入力してください
+              </div>
+            )}
+
+            <button onClick={handleLine} style={{
+              width: "100%", padding: "16px", borderRadius: "14px", border: "none",
+              background: isComplete ? `linear-gradient(135deg, ${GREEN} 0%, #00a344 100%)` : "#1e2023",
+              color: isComplete ? "#fff" : "#555",
+              fontWeight: 900, fontSize: "16px", letterSpacing: "2px",
+              cursor: isComplete ? "pointer" : "not-allowed",
+              transition: "all 0.3s",
+              boxShadow: isComplete ? "0 4px 24px rgba(6,199,85,0.4)" : "none",
+              display: "flex", alignItems: "center", justifyContent: "center", gap: "10px",
+              marginBottom: "10px",
+              fontFamily: "'Noto Sans JP', sans-serif",
+            }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill={isComplete ? "white" : "#555"}>
+                <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63.349 0 .631.285.631.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.281.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/>
+              </svg>
+              {sent ? "✅ 送信済み！再送する" : "LINEで送る"}
+            </button>
+
+            <button onClick={handleCopy} style={{
+              width: "100%", padding: "12px", borderRadius: "12px",
+              border: `2px solid ${copied ? GREEN : "#2a2d32"}`,
+              background: "transparent",
+              color: copied ? GREEN : "#6b7280",
+              fontWeight: 700, fontSize: "13px", letterSpacing: "1px",
+              cursor: "pointer", transition: "all 0.2s",
+              fontFamily: "'Noto Sans JP', sans-serif",
+            }}>
+              {copied ? "✅ コピーしました！" : "📋 テキストをコピーする（メール等）"}
+            </button>
+
+            <div style={{ textAlign: "center", color: "#374151", fontSize: "11px", marginTop: "16px" }}>
+              © 金海興業
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<ConcreteOrderForm />);
+  </script>
+</body>
+</html>
