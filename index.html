@@ -60,14 +60,27 @@
       shikenOptions:[], sonotaText:"",
     });
 
+    function getDaysInMonth(month) {
+      if (!month) return 31;
+      const now = new Date();
+      const currentMonth = now.getMonth() + 1;
+      const year = Number(month) < currentMonth ? now.getFullYear() + 1 : now.getFullYear();
+      return new Date(year, Number(month), 0).getDate();
+    }
+
     function calcWeekday(month, day) {
       if (!month || !day) return "";
       const now = new Date();
-      const year = Number(month) < now.getMonth() + 1
-        ? now.getFullYear() + 1
-        : now.getFullYear();
-      const d = new Date(year, Number(month) - 1, Number(day));
-      return isNaN(d) ? "" : WEEKDAYS[d.getDay()];
+      const cm = now.getMonth() + 1;
+      const cd = now.getDate();
+      const m = Number(month);
+      const d = Number(day);
+      const year =
+        m < cm || (m === cm && d < cd)
+          ? now.getFullYear() + 1
+          : now.getFullYear();
+      const date = new Date(year, m - 1, d);
+      return isNaN(date) ? "" : WEEKDAYS[date.getDay()];
     }
 
     function loadHistory() {
@@ -256,11 +269,16 @@
       const set = useCallback((key, val) => {
         setForm(f => {
           const next = { ...f, [key]: val };
-          if (key === "month" || key === "day") {
-            next.weekday = calcWeekday(
-              key === "month" ? val : f.month,
-              key === "day"   ? val : f.day
-            );
+          if (key === "month") {
+            const maxDay = getDaysInMonth(val);
+            if (f.day && Number(f.day) > maxDay) {
+              next.day = "";
+              next.weekday = "";
+            } else {
+              next.weekday = calcWeekday(val, f.day);
+            }
+          } else if (key === "day") {
+            next.weekday = calcWeekday(f.month, val);
           }
           return next;
         });
@@ -371,6 +389,11 @@
         window.open(`https://line.me/R/msg/text/?${encodeURIComponent(text)}`, "_blank");
         setTimeout(() => setSending(false), 3000);
       }, [form, text, sending]);
+
+      const availableDays = useMemo(
+        () => Array.from({ length: getDaysInMonth(form.month) }, (_, i) => i + 1),
+        [form.month]
+      );
 
       const missingCount = useMemo(
         () => REQUIRED_FIELDS.filter(k => !form[k] && form[k] !== 0).length,
@@ -542,7 +565,7 @@
                 </div>
                 <div style={{ flex: "1 1 70px" }}>
                   <Label text="日" required error={errors.day} />
-                  <StyledSelect value={form.day} onChange={e => set("day", e.target.value)} placeholder="日" error={errors.day} options={DAYS.map(d => ({ value: d, label: `${d}日` }))} />
+                  <StyledSelect value={form.day} onChange={e => set("day", e.target.value)} placeholder="日" error={errors.day} options={availableDays.map(d => ({ value: d, label: `${d}日` }))} />
                 </div>
                 <div style={{ flex: "0 0 56px" }}>
                   <Label text="曜日" />
