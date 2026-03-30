@@ -244,10 +244,11 @@
       const [showLogDeleteConfirm, setShowLogDeleteConfirm] = useState(false);
       const [showLog, setShowLog] = useState(false);
       const [sendLog, setSendLog] = useState([]);
-      const [previewTime] = useState(() => {
+      const getPreviewTime = () => {
         const now = new Date();
         return `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
-      });
+      };
+      const previewTime = showPreview ? getPreviewTime() : "";
 
       useEffect(() => {
         setHistory(loadHistory());
@@ -512,7 +513,7 @@
             <Section icon="👷" title="基本情報">
               <div style={{ marginBottom: "12px" }}>
                 <Label text="施工者名" required error={errors.name} />
-                <StyledInput value={form.name} onChange={e => set("name", e.target.value)} placeholder="例）田中建設　田中" error={errors.name} />
+                <StyledInput value={form.name} onChange={e => set("name", e.target.value)} placeholder="例）〇〇建設・〇〇興業" error={errors.name} />
               </div>
               <div style={{ marginBottom: "12px" }}>
                 <Label text="連絡先（電話番号）" required error={errors.tel} />
@@ -520,7 +521,7 @@
               </div>
               <div style={{ marginBottom: "12px" }}>
                 <Label text="現場名" required error={errors.genba} />
-                <StyledInput value={form.genba} onChange={e => set("genba", e.target.value)} placeholder="例）〇〇マンション新築工事" error={errors.genba} />
+                <StyledInput value={form.genba} onChange={e => set("genba", e.target.value)} placeholder="例）〇〇現場" error={errors.genba} />
               </div>
               <div>
                 <Label text="現場住所（任意）" />
