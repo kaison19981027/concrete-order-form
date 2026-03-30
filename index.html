@@ -190,6 +190,11 @@
       const [showHistory, setShowHistory] = useState(false);
       const [showPreview, setShowPreview] = useState(false);
       const [sent, setSent] = useState(false);
+      // 修正3: プレビュー時刻をマウント時に固定
+      const [previewTime] = useState(() => {
+        const now = new Date();
+        return `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
+      });
 
       useEffect(() => {
         setHistory(loadHistory());
@@ -228,10 +233,10 @@
         setSent(false); // 修正1: 試験種別変更時も送信済みをリセット
       }, []);
 
-      // 修正4: useCallback 化
       const applyHistory = useCallback((entry) => {
         setForm(f => ({ ...f, name: entry.name, tel: entry.tel, genba: entry.genba }));
         setShowHistory(false);
+        setSent(false); // 修正2: 履歴適用時も送信済みをリセット
       }, []);
 
       const handleReset = useCallback(() => {
@@ -244,6 +249,8 @@
       const validate = useCallback(() => {
         const errs = {};
         REQUIRED_FIELDS.forEach(k => { if (!form[k] && form[k] !== 0) errs[k] = true; });
+        // 修正6: 電話番号の書式チェック（数字・ハイフンのみ）
+        if (form.tel && !/^[\d\-+() ]+$/.test(form.tel)) errs.tel = true;
         setErrors(errs);
         return Object.keys(errs).length === 0;
       }, [form]);
@@ -379,13 +386,14 @@
 
           <div style={{ maxWidth: "480px", margin: "0 auto", padding: "16px" }}>
 
-            {Object.keys(errors).length > 0 && (
+            {/* 修正1: true のエラーだけをカウント */}
+            {Object.values(errors).filter(Boolean).length > 0 && (
               <div style={{
                 background: "#2a1a1a", border: "1px solid #ef4444",
                 borderRadius: "10px", padding: "12px 14px", marginBottom: "16px",
               }}>
                 <span style={{ color: "#ef4444", fontWeight: 700, fontSize: "13px" }}>
-                  ⚠ {Object.keys(errors).length}項目が未入力です。確認してください。
+                  ⚠ {Object.values(errors).filter(Boolean).length}項目が未入力です。確認してください。
                 </span>
               </div>
             )}
@@ -439,7 +447,8 @@
                 {MIX_FIELDS.map(f => (
                   <div key={f.key} style={{ flex: 1 }}>
                     <Label text={f.hint} required error={errors[f.key]} />
-                    <StyledInput value={form[f.key]} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} type="number" min="0" error={errors[f.key]} style={{ textAlign: "center" }} />
+                    {/* 修正5: 配合フィールドに step="1" 追加 */}
+                    <StyledInput value={form[f.key]} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} type="number" min="0" step="1" error={errors[f.key]} style={{ textAlign: "center" }} />
                   </div>
                 ))}
               </div>
@@ -463,7 +472,8 @@
                 <div style={{ flex: "0 0 90px" }}>
                   <Label text="台数（任意）" />
                   <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                    <StyledInput value={form.trucks} onChange={e => set("trucks", e.target.value)} placeholder="3" type="number" min="0" />
+                    {/* 修正4: 台数に step="1" 追加 */}
+                    <StyledInput value={form.trucks} onChange={e => set("trucks", e.target.value)} placeholder="3" type="number" min="0" step="1" />
                     <span style={{ color: "#9ca3af", fontSize: "13px" }}>台</span>
                   </div>
                 </div>
@@ -542,7 +552,7 @@
                         <pre style={{ color: "#222", fontSize: "13px", lineHeight: "1.85", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, fontFamily: "'Noto Sans JP', sans-serif" }}>{text}</pre>
                       </div>
                       <div style={{ color: "rgba(255,255,255,0.85)", fontSize: "10px", flexShrink: 0, paddingBottom: "2px" }}>
-                        {new Date().getHours()}:{String(new Date().getMinutes()).padStart(2, "0")}
+                        {previewTime}
                       </div>
                     </div>
                   </div>
