@@ -39,8 +39,9 @@
       "mix1","mix2","mix3","mixType","qty","qtyType","car"
     ];
 
-    const STORAGE_KEY = "concrete_order_history_v2";
-    const DRAFT_KEY   = "concrete_order_draft_v2";
+    const STORAGE_KEY      = "concrete_order_history_v2";
+    const DRAFT_KEY        = "concrete_order_draft_v2";
+    const CLEAR_PROMPT_KEY = "concrete_show_clear_prompt";
 
     const defaultForm = () => ({
       name:"", tel:"", genba:"",
@@ -204,6 +205,11 @@
           const saved = JSON.parse(localStorage.getItem(DRAFT_KEY));
           if (saved) setForm(saved);
         } catch {}
+        // LINEから戻ってきた時にクリア確認を復元
+        if (localStorage.getItem(CLEAR_PROMPT_KEY) === "true") {
+          setShowClearPrompt(true);
+          localStorage.removeItem(CLEAR_PROMPT_KEY);
+        }
       }, []);
 
       useEffect(() => {
@@ -317,6 +323,7 @@
         setSent(true);
         setSending(true);
         setShowClearPrompt(true);
+        localStorage.setItem(CLEAR_PROMPT_KEY, "true"); // ページ再読み込み後も復元
         window.open(`https://line.me/R/msg/text/?${encodeURIComponent(text)}`, "_blank");
         setTimeout(() => setSending(false), 3000); // 3秒後に再送信可能
       }, [validate, text, form, sending]);
@@ -592,27 +599,29 @@
               {sending ? "⏳ 送信中..." : sent ? "✅ 送信済み！再送する" : "LINEで送る"}
             </button>
 
-            {/* 送信後クリア確認 */}
+            {/* 送信後クリア確認（画面下部に固定） */}
             {showClearPrompt && (
               <div style={{
-                background: "#1a2a1a", border: `1px solid ${GREEN}`,
-                borderRadius: "12px", padding: "14px 16px", marginBottom: "10px",
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px",
+                position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200,
+                background: "#1a2a1a", borderTop: `2px solid ${GREEN}`,
+                padding: "16px 20px",
+                display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px",
+                boxShadow: "0 -4px 24px rgba(6,199,85,0.3)",
               }}>
-                <span style={{ color: "#e0e0e0", fontSize: "13px", fontWeight: 700 }}>
-                  📨 フォームをクリアしますか？
+                <span style={{ color: "#e0e0e0", fontSize: "14px", fontWeight: 700 }}>
+                  📨 送信完了！フォームをクリアしますか？
                 </span>
                 <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
                   <button onClick={handleReset} style={{
                     background: GREEN, border: "none", borderRadius: "8px",
-                    color: "white", fontSize: "12px", fontWeight: 700,
-                    padding: "6px 12px", cursor: "pointer",
+                    color: "white", fontSize: "13px", fontWeight: 700,
+                    padding: "8px 16px", cursor: "pointer",
                     fontFamily: "'Noto Sans JP', sans-serif",
                   }}>クリア</button>
-                  <button onClick={() => setShowClearPrompt(false)} style={{
+                  <button onClick={() => { setShowClearPrompt(false); localStorage.removeItem(CLEAR_PROMPT_KEY); }} style={{
                     background: "transparent", border: "1px solid #555", borderRadius: "8px",
-                    color: "#9ca3af", fontSize: "12px", fontWeight: 700,
-                    padding: "6px 12px", cursor: "pointer",
+                    color: "#9ca3af", fontSize: "13px", fontWeight: 700,
+                    padding: "8px 16px", cursor: "pointer",
                     fontFamily: "'Noto Sans JP', sans-serif",
                   }}>そのまま</button>
                 </div>
