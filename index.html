@@ -48,7 +48,7 @@
     const DRAFT_KEY        = "concrete_order_draft_v2";
     const CLEAR_PROMPT_KEY = "concrete_show_clear_prompt";
     const LOG_KEY          = "concrete_order_log_v1";
-    const CONTACTS_KEY     = "concrete_contacts_v1";
+    const CONTACTS_KEY     = "concrete_contacts_v2";
 
     const DEFAULT_CONTACTS = [
       { id: "default_1", name: "大坪",     lineId: "09095436156" },
@@ -273,16 +273,16 @@
       useEffect(() => {
         setHistory(loadHistory());
         setSendLog(loadLog());
-        const saved = loadContacts();
-        if (saved.length === 0) {
+        const savedContacts = loadContacts();
+        if (savedContacts.length === 0) {
           setContacts(DEFAULT_CONTACTS);
           saveContacts(DEFAULT_CONTACTS);
         } else {
-          setContacts(saved);
+          setContacts(savedContacts);
         }
         try {
-          const saved = JSON.parse(localStorage.getItem(DRAFT_KEY));
-          if (saved) setForm(saved);
+          const savedDraft = JSON.parse(localStorage.getItem(DRAFT_KEY));
+          if (savedDraft) setForm(savedDraft);
         } catch {}
         if (localStorage.getItem(CLEAR_PROMPT_KEY) === "true") {
           setShowClearPrompt(true);
