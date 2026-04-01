@@ -40,15 +40,16 @@
     ];
 
     const REQUIRED_FIELDS = [
-      "name","tel","genba","month","day","hour","minute",
-      "mix1","mix2","mix3","mixType","qty","qtyType","car"
+      "month","day","hour","minute",
+      "address","qty","car"
     ];
 
-    const STORAGE_KEY      = "concrete_order_history_v2";
-    const DRAFT_KEY        = "concrete_order_draft_v2";
-    const CLEAR_PROMPT_KEY = "concrete_show_clear_prompt";
-    const LOG_KEY          = "concrete_order_log_v1";
-    const CONTACTS_KEY     = "concrete_contacts_v2";
+    const STORAGE_KEY        = "concrete_order_history_v2";
+    const DRAFT_KEY          = "concrete_order_draft_v2";
+    const CLEAR_PROMPT_KEY   = "concrete_show_clear_prompt";
+    const LOG_KEY            = "concrete_order_log_v1";
+    const CONTACTS_KEY       = "concrete_contacts_v2";
+    const LAST_CONTACT_KEY   = "concrete_last_contact_v1";
 
     const DEFAULT_CONTACTS = [
       { id: "default_1", name: "大坪",     lineId: "09095436156" },
@@ -65,6 +66,7 @@
       car:"",
       keikakusho:"", shiken:"",
       shikenOptions:[], sonotaText:"",
+      memo:"",
     });
 
     function getDaysInMonth(month) {
@@ -105,7 +107,7 @@
     function saveContacts(list) {
       try { localStorage.setItem(CONTACTS_KEY, JSON.stringify(list)); } catch {}
     }
-    function saveLog(form, text) {
+    function saveLog(form, text, contactName) {
       try {
         const log = loadLog();
         const now = new Date();
@@ -114,7 +116,9 @@
           label: `${now.getMonth()+1}/${now.getDate()} ${now.getHours()}:${String(now.getMinutes()).padStart(2,"0")}`,
           name: form.name, genba: form.genba,
           mix: `${form.mix1}-${form.mix2}-${form.mix3}(${form.mixType})`,
-          qty: `${form.qty}㎥`, text,
+          qty: `${form.qty}㎥`,
+          contactName: contactName || "－",
+          text,
         };
         localStorage.setItem(LOG_KEY, JSON.stringify([entry, ...log].slice(0, 30)));
       } catch {}
@@ -280,6 +284,8 @@
         } else {
           setContacts(savedContacts);
         }
+        const lastContact = localStorage.getItem(LAST_CONTACT_KEY) || "default_3";
+        setSelectedContactId(lastContact);
         try {
           const savedDraft = JSON.parse(localStorage.getItem(DRAFT_KEY));
           if (savedDraft) setForm(savedDraft);
@@ -289,6 +295,12 @@
           localStorage.removeItem(CLEAR_PROMPT_KEY);
         }
       }, []);
+
+      useEffect(() => {
+        if (selectedContactId) {
+          localStorage.setItem(LAST_CONTACT_KEY, selectedContactId);
+        }
+      }, [selectedContactId]);
 
       useEffect(() => {
         try { localStorage.setItem(DRAFT_KEY, JSON.stringify(form)); } catch {}
@@ -369,7 +381,7 @@
 🚚【車種】${form.car || "－"}
 📋【書類・試験】
 　配合計画書：${form.keikakusho || "－"}
-　試験：${shikenLabel}`;
+　試験：${shikenLabel}${form.memo ? `\n📝【メモ】${form.memo}` : ""}`;
       };
 
       const text = useMemo(buildText, [form]);
@@ -407,7 +419,8 @@
         if (sending) return;
         setShowConfirm(false);
         saveHistory(form);
-        saveLog(form, text);
+        const sentContact = contacts.find(c => c.id === selectedContactId);
+        saveLog(form, text, sentContact ? sentContact.name : null);
         setHistory(loadHistory());
         setSendLog(loadLog());
         setSent(true);
@@ -536,6 +549,7 @@
                     <span style={{ color: "#6b7280", fontSize: "11px" }}>{log.mix} / {log.qty}</span>
                   </div>
                   <div style={{ color: "#e0e0e0", fontSize: "12px", marginTop: "2px" }}>🚧 {log.genba}　👷 {log.name}</div>
+                  <div style={{ color: "#9ca3af", fontSize: "11px", marginTop: "2px" }}>📨 送信先：{log.contactName || "－"}</div>
                 </div>
               ))}
             </div>
@@ -579,24 +593,25 @@
 
             <Section icon="👷" title="基本情報">
               <div style={{ marginBottom: "12px" }}>
-                <Label text="施工者名" required error={errors.name} />
-                <StyledInput value={form.name} onChange={e => set("name", e.target.value)} placeholder="例）〇〇建設・〇〇興業" error={errors.name} />
+                <Label text="施工者名（任意）" />
+                <StyledInput value={form.name} onChange={e => set("name", e.target.value)} placeholder="例）〇〇建設・〇〇興業" />
               </div>
               <div style={{ marginBottom: "12px" }}>
-                <Label text="連絡先（電話番号）" required error={errors.tel} />
-                <StyledInput value={form.tel} onChange={e => set("tel", e.target.value)} placeholder="例）090-0000-0000" type="tel" error={errors.tel} />
+                <Label text="連絡先（電話番号・任意）" />
+                <StyledInput value={form.tel} onChange={e => set("tel", e.target.value)} placeholder="例）090-0000-0000" type="tel" />
               </div>
               <div style={{ marginBottom: "12px" }}>
-                <Label text="現場名" required error={errors.genba} />
-                <StyledInput value={form.genba} onChange={e => set("genba", e.target.value)} placeholder="例）〇〇現場" error={errors.genba} />
+                <Label text="現場名（任意）" />
+                <StyledInput value={form.genba} onChange={e => set("genba", e.target.value)} placeholder="例）〇〇現場" />
               </div>
               <div>
-                <Label text="現場住所（任意）" />
+                <Label text="現場住所" required error={errors.address} />
                 <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                   <StyledInput
                     value={form.address}
                     onChange={e => set("address", e.target.value)}
                     placeholder="例）大阪府堺市〇〇町1-2-3"
+                    error={errors.address}
                   />
                   {form.address && (
                     <a
@@ -637,7 +652,11 @@
                 </div>
                 <div style={{ flex: "0 0 56px" }}>
                   <Label text="曜日" />
-                  <div style={{ ...BASE_INPUT, textAlign: "center", color: form.weekday ? GREEN : "#555", fontWeight: 700, fontSize: "16px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{
+                    ...BASE_INPUT, textAlign: "center", fontWeight: 700, fontSize: "16px",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    color: form.weekday === "日" ? "#ef4444" : form.weekday === "土" ? "#60a5fa" : form.weekday ? GREEN : "#555",
+                  }}>
                     {form.weekday || "自動"}
                   </div>
                 </div>
@@ -658,15 +677,15 @@
               <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
                 {MIX_FIELDS.map(f => (
                   <div key={f.key} style={{ flex: 1 }}>
-                    <Label text={f.hint} required error={errors[f.key]} />
-                    <StyledInput value={form[f.key]} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} type="number" min="0" step="1" inputMode="numeric" error={errors[f.key]} style={{ textAlign: "center" }} />
+                    <Label text={f.hint} />
+                    <StyledInput value={form[f.key]} onChange={e => set(f.key, e.target.value)} placeholder={f.placeholder} type="number" min="0" step="1" inputMode="numeric" style={{ textAlign: "center" }} />
                   </div>
                 ))}
               </div>
-              <Label text="セメント種別" required error={errors.mixType} />
+              <Label text="セメント種別（任意）" />
               <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                 {[["N", "N（普通）"], ["BB", "BB（高炉）"], ["H", "H（早強）"]].map(([code, label]) => (
-                  <Chip key={code} label={label} selected={form.mixType === code} error={errors.mixType} onClick={() => set("mixType", code)} />
+                  <Chip key={code} label={label} selected={form.mixType === code} onClick={() => set("mixType", code)} />
                 ))}
               </div>
             </Section>
@@ -689,10 +708,10 @@
                 </div>
               </div>
               <div style={{ marginBottom: "12px" }}>
-                <Label text="打設区分" required error={errors.qtyType} />
+                <Label text="打設区分（任意）" />
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                   {["出切", "待ち", "位"].map(t => (
-                    <Chip key={t} label={t} selected={form.qtyType === t} error={errors.qtyType} onClick={() => set("qtyType", t)} />
+                    <Chip key={t} label={t} selected={form.qtyType === t} onClick={() => set("qtyType", t)} />
                   ))}
                 </div>
               </div>
@@ -736,6 +755,14 @@
                   </div>
                 )}
               </div>
+            </Section>
+
+            <Section icon="📝" title="メモ（任意）">
+              <StyledInput
+                value={form.memo}
+                onChange={e => set("memo", e.target.value)}
+                placeholder="例）雨天注意・〇〇様対応・早強希望"
+              />
             </Section>
 
             <div style={{ marginBottom: "12px" }}>
