@@ -284,8 +284,12 @@
         } else {
           setContacts(savedContacts);
         }
-        const lastContact = localStorage.getItem(LAST_CONTACT_KEY) || "default_3";
-        setSelectedContactId(lastContact);
+        const loadedContacts = savedContacts.length === 0 ? DEFAULT_CONTACTS : savedContacts;
+        const lastContact = localStorage.getItem(LAST_CONTACT_KEY) || "";
+        const validId = loadedContacts.find(c => c.id === lastContact)
+          ? lastContact
+          : (loadedContacts[0]?.id || "");
+        setSelectedContactId(validId);
         try {
           const savedDraft = JSON.parse(localStorage.getItem(DRAFT_KEY));
           if (savedDraft) setForm(savedDraft);
@@ -482,6 +486,16 @@
       );
       const isComplete = missingCount === 0;
 
+      const sortedContacts = useMemo(() => {
+        const counts = {};
+        sendLog.forEach(log => {
+          if (log.contactName && log.contactName !== "－") {
+            counts[log.contactName] = (counts[log.contactName] || 0) + 1;
+          }
+        });
+        return [...contacts].sort((a, b) => (counts[b.name] || 0) - (counts[a.name] || 0));
+      }, [contacts, sendLog]);
+
       return (
         <div style={{ fontFamily: "'Noto Sans JP', sans-serif", background: "#13151a", minHeight: "100vh", paddingBottom: "40px" }}>
           <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet" />
@@ -571,8 +585,11 @@
                   color: "#e0e0e0", textAlign: "left", cursor: "pointer",
                   fontFamily: "'Noto Sans JP', sans-serif",
                 }}>
-                  <div style={{ fontWeight: 700, fontSize: "13px" }}>👷 {h.name}</div>
-                  <div style={{ color: "#9ca3af", fontSize: "11px", marginTop: "2px" }}>🚧 {h.genba}　📞 {h.tel}</div>
+                  <div style={{ fontWeight: 700, fontSize: "13px" }}>📍 {h.address || h.genba || "住所なし"}</div>
+                  <div style={{ color: "#9ca3af", fontSize: "11px", marginTop: "2px" }}>
+                    {h.name && <span>👷 {h.name}　</span>}
+                    {h.genba && <span>🚧 {h.genba}</span>}
+                  </div>
                 </button>
               ))}
             </div>
@@ -819,6 +836,7 @@
                       <span style={{ color: "#6b7280", fontSize: "11px", marginLeft: "6px" }}>（テキストをコピーしてチャットを開きます）</span>
                     </div>
                   )}
+
                   <div style={{ background: "#13151a", borderRadius: "12px", padding: "12px 14px", marginBottom: "16px", maxHeight: "40vh", overflowY: "auto" }}>
                     <pre style={{ color: "#d0d0d0", fontSize: "13px", lineHeight: "1.85", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, fontFamily: "'Noto Sans JP', sans-serif" }}>{text}</pre>
                   </div>
@@ -913,6 +931,7 @@
               </div>
             )}
 
+
             {/* 送信先セレクター */}
             <div style={{ background: "#1e2023", border: "1px solid #2a2d32", borderRadius: "12px", padding: "12px 14px", marginBottom: "12px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
@@ -940,20 +959,32 @@
                       fontFamily: "'Noto Sans JP', sans-serif",
                     }}
                   >選択なし</button>
-                  {contacts.map(c => (
-                    <button
-                      key={c.id}
-                      onClick={() => setSelectedContactId(c.id)}
-                      style={{
-                        padding: "7px 14px", borderRadius: "999px",
-                        border: `2px solid ${selectedContactId === c.id ? GREEN : "#35383d"}`,
-                        background: selectedContactId === c.id ? GREEN : "transparent",
-                        color: selectedContactId === c.id ? "#fff" : "#9ca3af",
-                        fontWeight: 700, fontSize: "12px", cursor: "pointer",
-                        fontFamily: "'Noto Sans JP', sans-serif",
-                      }}
-                    >{c.name}</button>
-                  ))}
+                  {sortedContacts.map(c => {
+                    const sendCount = sendLog.filter(l => l.contactName === c.name).length;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => setSelectedContactId(c.id)}
+                        style={{
+                          padding: "7px 14px", borderRadius: "999px",
+                          border: `2px solid ${selectedContactId === c.id ? GREEN : "#35383d"}`,
+                          background: selectedContactId === c.id ? GREEN : "transparent",
+                          color: selectedContactId === c.id ? "#fff" : "#9ca3af",
+                          fontWeight: 700, fontSize: "12px", cursor: "pointer",
+                          fontFamily: "'Noto Sans JP', sans-serif",
+                          position: "relative",
+                        }}
+                      >
+                        {c.name}
+                        {sendCount > 0 && (
+                          <span style={{
+                            marginLeft: "5px", fontSize: "10px", opacity: 0.75,
+                            color: selectedContactId === c.id ? "#fff" : "#6b7280",
+                          }}>{sendCount}回</span>
+                        )}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -976,7 +1007,7 @@
                   </div>
                   {contacts.length > 0 && (
                     <div style={{ marginBottom: "16px" }}>
-                      {contacts.map((c, i) => (
+                      {contacts.map((c) => (
                         <div key={c.id} style={{
                           display: "flex", alignItems: "center", justifyContent: "space-between",
                           padding: "10px 12px", background: "#13151a", borderRadius: "10px",
