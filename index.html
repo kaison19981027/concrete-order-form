@@ -48,6 +48,13 @@
     const DRAFT_KEY        = "concrete_order_draft_v2";
     const CLEAR_PROMPT_KEY = "concrete_show_clear_prompt";
     const LOG_KEY          = "concrete_order_log_v1";
+    const CONTACTS_KEY     = "concrete_contacts_v1";
+
+    const DEFAULT_CONTACTS = [
+      { id: "default_1", name: "大坪",     lineId: "09095436156" },
+      { id: "default_2", name: "魁誠",     lineId: "09050460670" },
+      { id: "default_3", name: "金海生コン", lineId: "09034663605" },
+    ];
 
     const defaultForm = () => ({
       name:"", tel:"", genba:"", address:"",
@@ -90,6 +97,13 @@
     function loadLog() {
       try { return JSON.parse(localStorage.getItem(LOG_KEY) || "[]"); }
       catch { return []; }
+    }
+    function loadContacts() {
+      try { return JSON.parse(localStorage.getItem(CONTACTS_KEY) || "[]"); }
+      catch { return []; }
+    }
+    function saveContacts(list) {
+      try { localStorage.setItem(CONTACTS_KEY, JSON.stringify(list)); } catch {}
     }
     function saveLog(form, text) {
       try {
@@ -244,6 +258,12 @@
       const [showLogDeleteConfirm, setShowLogDeleteConfirm] = useState(false);
       const [showLog, setShowLog] = useState(false);
       const [sendLog, setSendLog] = useState([]);
+      const [contacts, setContacts] = useState([]);
+      const [selectedContactId, setSelectedContactId] = useState("");
+      const [showContactsModal, setShowContactsModal] = useState(false);
+      const [newContactName, setNewContactName] = useState("");
+      const [newContactLineId, setNewContactLineId] = useState("");
+      const [contactErrors, setContactErrors] = useState({});
       const getPreviewTime = () => {
         const now = new Date();
         return `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -253,6 +273,13 @@
       useEffect(() => {
         setHistory(loadHistory());
         setSendLog(loadLog());
+        const saved = loadContacts();
+        if (saved.length === 0) {
+          setContacts(DEFAULT_CONTACTS);
+          saveContacts(DEFAULT_CONTACTS);
+        } else {
+          setContacts(saved);
+        }
         try {
           const saved = JSON.parse(localStorage.getItem(DRAFT_KEY));
           if (saved) setForm(saved);
@@ -387,9 +414,49 @@
         setSending(true);
         setShowClearPrompt(true);
         localStorage.setItem(CLEAR_PROMPT_KEY, "true");
-        window.open(`https://line.me/R/msg/text/?${encodeURIComponent(text)}`, "_blank");
+        const contact = contacts.find(c => c.id === selectedContactId);
+        if (contact && contact.lineId) {
+          const doCopy = () => {
+            if (navigator.clipboard && window.isSecureContext) {
+              return navigator.clipboard.writeText(text).catch(() => {});
+            }
+            const el = document.createElement("textarea");
+            el.value = text;
+            el.style.position = "fixed";
+            el.style.opacity = "0";
+            document.body.appendChild(el);
+            el.select();
+            document.execCommand("copy");
+            document.body.removeChild(el);
+          };
+          doCopy();
+          const val = contact.lineId.trim();
+          let lineUrl;
+          if (val.startsWith("https://line.me/ti/g/")) {
+            const groupId = val.replace("https://line.me/ti/g/", "").split("?")[0];
+            lineUrl = `line://ti/g/${groupId}`;
+          } else if (val.startsWith("line://ti/g/")) {
+            lineUrl = val;
+          } else {
+            const digits = val.replace(/[-\s]/g, "");
+            let phone = null;
+            if (digits.startsWith("+") && /^\+\d{7,15}$/.test(digits)) {
+              phone = digits;
+            } else if (digits.startsWith("0") && /^\d{10,11}$/.test(digits)) {
+              phone = "+81" + digits.slice(1);
+            }
+            if (phone) {
+              lineUrl = `line://ti/p/${encodeURIComponent(phone)}`;
+            } else {
+              lineUrl = `line://ti/p/${val}`;
+            }
+          }
+          window.open(lineUrl, "_blank");
+        } else {
+          window.open(`https://line.me/R/msg/text/?${encodeURIComponent(text)}`, "_blank");
+        }
         setTimeout(() => setSending(false), 3000);
-      }, [form, text, sending]);
+      }, [form, text, sending, contacts, selectedContactId]);
 
       const availableDays = useMemo(
         () => Array.from({ length: getDaysInMonth(form.month) }, (_, i) => i + 1),
@@ -718,6 +785,13 @@
                   <div style={{ textAlign: "center", color: "#f0f0f0", fontWeight: 700, fontSize: "15px", marginBottom: "14px" }}>
                     この内容で送信しますか？
                   </div>
+                  {contacts.find(c => c.id === selectedContactId) && (
+                    <div style={{ textAlign: "center", background: "#13151a", borderRadius: "8px", padding: "8px 12px", marginBottom: "10px" }}>
+                      <span style={{ color: "#9ca3af", fontSize: "12px" }}>送信先：</span>
+                      <span style={{ color: GREEN, fontWeight: 700, fontSize: "13px" }}>{contacts.find(c => c.id === selectedContactId).name}</span>
+                      <span style={{ color: "#6b7280", fontSize: "11px", marginLeft: "6px" }}>（テキストをコピーしてチャットを開きます）</span>
+                    </div>
+                  )}
                   <div style={{ background: "#13151a", borderRadius: "12px", padding: "12px 14px", marginBottom: "16px", maxHeight: "40vh", overflowY: "auto" }}>
                     <pre style={{ color: "#d0d0d0", fontSize: "13px", lineHeight: "1.85", whiteSpace: "pre-wrap", wordBreak: "break-all", margin: 0, fontFamily: "'Noto Sans JP', sans-serif" }}>{text}</pre>
                   </div>
@@ -812,6 +886,151 @@
               </div>
             )}
 
+            {/* 送信先セレクター */}
+            <div style={{ background: "#1e2023", border: "1px solid #2a2d32", borderRadius: "12px", padding: "12px 14px", marginBottom: "12px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+                <span style={{ color: GREEN, fontSize: "11px", fontWeight: 700, letterSpacing: "1px" }}>送信先</span>
+                <button onClick={() => { setNewContactName(""); setNewContactLineId(""); setContactErrors({}); setShowContactsModal(true); }} style={{
+                  background: "transparent", border: "1px solid #35383d", borderRadius: "6px",
+                  color: "#9ca3af", fontSize: "11px", fontWeight: 700, padding: "3px 8px", cursor: "pointer",
+                  fontFamily: "'Noto Sans JP', sans-serif",
+                }}>⚙ 管理</button>
+              </div>
+              {contacts.length === 0 ? (
+                <div style={{ color: "#6b7280", fontSize: "12px" }}>
+                  送信先が登録されていません。「管理」から追加できます。
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                  <button
+                    onClick={() => setSelectedContactId("")}
+                    style={{
+                      padding: "7px 14px", borderRadius: "999px",
+                      border: `2px solid ${selectedContactId === "" ? GREEN : "#35383d"}`,
+                      background: selectedContactId === "" ? GREEN : "transparent",
+                      color: selectedContactId === "" ? "#fff" : "#9ca3af",
+                      fontWeight: 700, fontSize: "12px", cursor: "pointer",
+                      fontFamily: "'Noto Sans JP', sans-serif",
+                    }}
+                  >選択なし</button>
+                  {contacts.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => setSelectedContactId(c.id)}
+                      style={{
+                        padding: "7px 14px", borderRadius: "999px",
+                        border: `2px solid ${selectedContactId === c.id ? GREEN : "#35383d"}`,
+                        background: selectedContactId === c.id ? GREEN : "transparent",
+                        color: selectedContactId === c.id ? "#fff" : "#9ca3af",
+                        fontWeight: 700, fontSize: "12px", cursor: "pointer",
+                        fontFamily: "'Noto Sans JP', sans-serif",
+                      }}
+                    >{c.name}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 連絡先管理モーダル */}
+            {showContactsModal && (
+              <div style={{
+                position: "fixed", inset: 0, zIndex: 300,
+                background: "rgba(0,0,0,0.75)",
+                display: "flex", alignItems: "flex-end", justifyContent: "center",
+              }} onClick={() => setShowContactsModal(false)}>
+                <div style={{
+                  background: "#1e2023", borderRadius: "20px 20px 0 0",
+                  padding: "20px 16px 32px", width: "100%", maxWidth: "480px",
+                  boxShadow: "0 -8px 32px rgba(0,0,0,0.6)",
+                  maxHeight: "85vh", overflowY: "auto",
+                }} onClick={e => e.stopPropagation()}>
+                  <div style={{ textAlign: "center", color: "#f0f0f0", fontWeight: 700, fontSize: "15px", marginBottom: "16px" }}>
+                    📇 送信先を管理
+                  </div>
+                  {contacts.length > 0 && (
+                    <div style={{ marginBottom: "16px" }}>
+                      {contacts.map((c, i) => (
+                        <div key={c.id} style={{
+                          display: "flex", alignItems: "center", justifyContent: "space-between",
+                          padding: "10px 12px", background: "#13151a", borderRadius: "10px",
+                          marginBottom: "8px",
+                        }}>
+                          <div>
+                            <div style={{ color: "#f0f0f0", fontWeight: 700, fontSize: "13px" }}>{c.name}</div>
+                            <div style={{ color: "#6b7280", fontSize: "11px", marginTop: "2px" }}>LINE ID: {c.lineId}</div>
+                          </div>
+                          <button onClick={() => {
+                            const updated = contacts.filter(x => x.id !== c.id);
+                            setContacts(updated);
+                            saveContacts(updated);
+                            if (selectedContactId === c.id) setSelectedContactId("");
+                          }} style={{
+                            background: "transparent", border: "none", color: "#ef4444",
+                            fontSize: "18px", cursor: "pointer", padding: "4px 8px",
+                          }}>×</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ background: "#13151a", borderRadius: "12px", padding: "14px", marginBottom: "14px" }}>
+                    <div style={{ color: "#9ca3af", fontSize: "11px", fontWeight: 700, marginBottom: "10px" }}>＋ 新しい送信先を追加</div>
+                    <div style={{ marginBottom: "8px" }}>
+                      <div style={{ color: contactErrors.name ? "#ef4444" : GREEN, fontSize: "11px", fontWeight: 700, marginBottom: "4px" }}>
+                        名前 {contactErrors.name && <span style={{ color: "#ef4444" }}>⚠ 必須</span>}
+                      </div>
+                      <input
+                        style={{ ...BASE_INPUT, ...(contactErrors.name ? ERR_INPUT : {}) }}
+                        placeholder="例）〇〇工場"
+                        value={newContactName}
+                        onChange={e => { setNewContactName(e.target.value); setContactErrors(v => ({ ...v, name: false })); }}
+                      />
+                    </div>
+                    <div style={{ marginBottom: "12px" }}>
+                      <div style={{ color: contactErrors.lineId ? "#ef4444" : GREEN, fontSize: "11px", fontWeight: 700, marginBottom: "4px" }}>
+                        電話番号 / LINE ID / グループURL {contactErrors.lineId && <span style={{ color: "#ef4444" }}>⚠ 必須</span>}
+                      </div>
+                      <input
+                        style={{ ...BASE_INPUT, ...(contactErrors.lineId ? ERR_INPUT : {}) }}
+                        placeholder="例）090-1234-5678"
+                        value={newContactLineId}
+                        onChange={e => { setNewContactLineId(e.target.value); setContactErrors(v => ({ ...v, lineId: false })); }}
+                      />
+                      <div style={{ color: "#6b7280", fontSize: "10px", marginTop: "4px" }}>
+                        📱 電話番号（090-…）→ すでに友達の相手のチャットを開く<br/>
+                        🪪 LINE ID → プロフィール ＞ ID<br/>
+                        👥 グループURL → グループ ＞ 招待 ＞ リンクをコピー
+                      </div>
+                    </div>
+                    <button onClick={() => {
+                      const errs = {};
+                      if (!newContactName.trim()) errs.name = true;
+                      if (!newContactLineId.trim()) errs.lineId = true;
+                      setContactErrors(errs);
+                      if (Object.keys(errs).length > 0) return;
+                      const newContact = { id: String(Date.now()), name: newContactName.trim(), lineId: newContactLineId.trim() };
+                      const updated = [...contacts, newContact];
+                      setContacts(updated);
+                      saveContacts(updated);
+                      setNewContactName("");
+                      setNewContactLineId("");
+                      setContactErrors({});
+                    }} style={{
+                      width: "100%", padding: "12px", borderRadius: "10px", border: "none",
+                      background: `linear-gradient(135deg, ${GREEN} 0%, #00a344 100%)`,
+                      color: "white", fontWeight: 700, fontSize: "14px",
+                      cursor: "pointer", fontFamily: "'Noto Sans JP', sans-serif",
+                    }}>追加する</button>
+                  </div>
+                  <button onClick={() => setShowContactsModal(false)} style={{
+                    width: "100%", padding: "12px", borderRadius: "10px",
+                    border: "1px solid #35383d", background: "transparent",
+                    color: "#9ca3af", fontWeight: 700, fontSize: "14px",
+                    cursor: "pointer", fontFamily: "'Noto Sans JP', sans-serif",
+                  }}>閉じる</button>
+                </div>
+              </div>
+            )}
+
             {!isComplete && (
               <div style={{ textAlign: "center", color: "#f59e0b", fontSize: "12px", marginBottom: "10px", fontWeight: 700 }}>
                 あと {missingCount} 項目を入力してください
@@ -834,7 +1053,7 @@
               <svg width="22" height="22" viewBox="0 0 24 24" fill={isComplete && !sending ? "white" : "#555"}>
                 <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63.349 0 .631.285.631.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.281.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/>
               </svg>
-              {sending ? "⏳ 送信中..." : sent ? "✅ 送信済み！再送する" : "LINEで送る"}
+              {sending ? "⏳ 送信中..." : sent ? "✅ 送信済み！再送する" : contacts.find(c => c.id === selectedContactId) ? `${contacts.find(c => c.id === selectedContactId).name} にLINEで送る` : "LINEで送る"}
             </button>
 
             {showClearPrompt && (
