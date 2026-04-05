@@ -48,14 +48,6 @@
     const DRAFT_KEY          = "concrete_order_draft_v2";
     const CLEAR_PROMPT_KEY   = "concrete_show_clear_prompt";
     const LOG_KEY            = "concrete_order_log_v1";
-    const CONTACTS_KEY       = "concrete_contacts_v2";
-    const LAST_CONTACT_KEY   = "concrete_last_contact_v1";
-
-    const DEFAULT_CONTACTS = [
-      { id: "default_1", name: "大坪",     lineId: "09095436156" },
-      { id: "default_2", name: "魁誠",     lineId: "09050460670" },
-      { id: "default_3", name: "金海生コン", lineId: "09034663605" },
-    ];
 
     const defaultForm = () => ({
       name:"", tel:"", genba:"", address:"",
@@ -99,13 +91,6 @@
     function loadLog() {
       try { return JSON.parse(localStorage.getItem(LOG_KEY) || "[]"); }
       catch { return []; }
-    }
-    function loadContacts() {
-      try { return JSON.parse(localStorage.getItem(CONTACTS_KEY) || "[]"); }
-      catch { return []; }
-    }
-    function saveContacts(list) {
-      try { localStorage.setItem(CONTACTS_KEY, JSON.stringify(list)); } catch {}
     }
     function saveLog(form, text, contactName) {
       try {
@@ -262,12 +247,7 @@
       const [showLogDeleteConfirm, setShowLogDeleteConfirm] = useState(false);
       const [showLog, setShowLog] = useState(false);
       const [sendLog, setSendLog] = useState([]);
-      const [contacts, setContacts] = useState([]);
-      const [selectedContactId, setSelectedContactId] = useState("");
-      const [showContactsModal, setShowContactsModal] = useState(false);
-      const [newContactName, setNewContactName] = useState("");
-      const [newContactLineId, setNewContactLineId] = useState("");
-      const [contactErrors, setContactErrors] = useState({});
+      const [recipientName, setRecipientName] = useState("");
       const getPreviewTime = () => {
         const now = new Date();
         return `${now.getHours()}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -277,19 +257,6 @@
       useEffect(() => {
         setHistory(loadHistory());
         setSendLog(loadLog());
-        const savedContacts = loadContacts();
-        if (savedContacts.length === 0) {
-          setContacts(DEFAULT_CONTACTS);
-          saveContacts(DEFAULT_CONTACTS);
-        } else {
-          setContacts(savedContacts);
-        }
-        const loadedContacts = savedContacts.length === 0 ? DEFAULT_CONTACTS : savedContacts;
-        const lastContact = localStorage.getItem(LAST_CONTACT_KEY) || "";
-        const validId = loadedContacts.find(c => c.id === lastContact)
-          ? lastContact
-          : (loadedContacts[0]?.id || "");
-        setSelectedContactId(validId);
         try {
           const savedDraft = JSON.parse(localStorage.getItem(DRAFT_KEY));
           if (savedDraft) setForm(savedDraft);
@@ -299,12 +266,6 @@
           localStorage.removeItem(CLEAR_PROMPT_KEY);
         }
       }, []);
-
-      useEffect(() => {
-        if (selectedContactId) {
-          localStorage.setItem(LAST_CONTACT_KEY, selectedContactId);
-        }
-      }, [selectedContactId]);
 
       useEffect(() => {
         try { localStorage.setItem(DRAFT_KEY, JSON.stringify(form)); } catch {}
@@ -359,7 +320,7 @@
         const errs = {};
         REQUIRED_FIELDS.forEach(k => { if (!form[k] && form[k] !== 0) errs[k] = true; });
         const tel = form.tel || "";
-        if (!tel.trim() || !/^[\d\-+() ]+$/.test(tel.trim())) errs.tel = true;
+        if (tel.trim() && !/^[\d\-+() ]+$/.test(tel.trim())) errs.tel = true;
         setErrors(errs);
         return Object.keys(errs).length === 0;
       }, [form]);
@@ -423,57 +384,16 @@
         if (sending) return;
         setShowConfirm(false);
         saveHistory(form);
-        const sentContact = contacts.find(c => c.id === selectedContactId);
-        saveLog(form, text, sentContact ? sentContact.name : null);
+        saveLog(form, text, recipientName.trim() || null);
         setHistory(loadHistory());
         setSendLog(loadLog());
         setSent(true);
         setSending(true);
         setShowClearPrompt(true);
         localStorage.setItem(CLEAR_PROMPT_KEY, "true");
-        const contact = contacts.find(c => c.id === selectedContactId);
-        if (contact && contact.lineId) {
-          const doCopy = () => {
-            if (navigator.clipboard && window.isSecureContext) {
-              return navigator.clipboard.writeText(text).catch(() => {});
-            }
-            const el = document.createElement("textarea");
-            el.value = text;
-            el.style.position = "fixed";
-            el.style.opacity = "0";
-            document.body.appendChild(el);
-            el.select();
-            document.execCommand("copy");
-            document.body.removeChild(el);
-          };
-          doCopy();
-          const val = contact.lineId.trim();
-          let lineUrl;
-          if (val.startsWith("https://line.me/ti/g/")) {
-            const groupId = val.replace("https://line.me/ti/g/", "").split("?")[0];
-            lineUrl = `line://ti/g/${groupId}`;
-          } else if (val.startsWith("line://ti/g/")) {
-            lineUrl = val;
-          } else {
-            const digits = val.replace(/[-\s]/g, "");
-            let phone = null;
-            if (digits.startsWith("+") && /^\+\d{7,15}$/.test(digits)) {
-              phone = digits;
-            } else if (digits.startsWith("0") && /^\d{10,11}$/.test(digits)) {
-              phone = "+81" + digits.slice(1);
-            }
-            if (phone) {
-              lineUrl = `line://ti/p/${encodeURIComponent(phone)}`;
-            } else {
-              lineUrl = `line://ti/p/${val}`;
-            }
-          }
-          window.open(lineUrl, "_blank");
-        } else {
-          window.open(`https://line.me/R/msg/text/?${encodeURIComponent(text)}`, "_blank");
-        }
+        window.open(`https://line.me/R/msg/text/?${encodeURIComponent(text)}`, "_blank");
         setTimeout(() => setSending(false), 3000);
-      }, [form, text, sending, contacts, selectedContactId]);
+      }, [form, text, sending, recipientName]);
 
       const availableDays = useMemo(
         () => Array.from({ length: getDaysInMonth(form.month) }, (_, i) => i + 1),
@@ -485,16 +405,6 @@
         [form]
       );
       const isComplete = missingCount === 0;
-
-      const sortedContacts = useMemo(() => {
-        const counts = {};
-        sendLog.forEach(log => {
-          if (log.contactName && log.contactName !== "－") {
-            counts[log.contactName] = (counts[log.contactName] || 0) + 1;
-          }
-        });
-        return [...contacts].sort((a, b) => (counts[b.name] || 0) - (counts[a.name] || 0));
-      }, [contacts, sendLog]);
 
       return (
         <div style={{ fontFamily: "'Noto Sans JP', sans-serif", background: "#13151a", minHeight: "100vh", paddingBottom: "40px" }}>
@@ -775,10 +685,24 @@
             </Section>
 
             <Section icon="📝" title="メモ（任意）">
-              <StyledInput
+              <textarea
+                style={{
+                  ...BASE_INPUT,
+                  resize: "vertical",
+                  minHeight: "72px",
+                  lineHeight: "1.6",
+                }}
                 value={form.memo}
                 onChange={e => set("memo", e.target.value)}
-                placeholder=""
+                placeholder="特記事項・注意事項など"
+              />
+            </Section>
+
+            <Section icon="📤" title="送信先（任意）">
+              <StyledInput
+                value={recipientName}
+                onChange={e => setRecipientName(e.target.value)}
+                placeholder="例）〇〇工場・〇〇担当"
               />
             </Section>
 
@@ -829,11 +753,10 @@
                   <div style={{ textAlign: "center", color: "#f0f0f0", fontWeight: 700, fontSize: "15px", marginBottom: "14px" }}>
                     この内容で送信しますか？
                   </div>
-                  {contacts.find(c => c.id === selectedContactId) && (
+                  {recipientName.trim() && (
                     <div style={{ textAlign: "center", background: "#13151a", borderRadius: "8px", padding: "8px 12px", marginBottom: "10px" }}>
                       <span style={{ color: "#9ca3af", fontSize: "12px" }}>送信先：</span>
-                      <span style={{ color: GREEN, fontWeight: 700, fontSize: "13px" }}>{contacts.find(c => c.id === selectedContactId).name}</span>
-                      <span style={{ color: "#6b7280", fontSize: "11px", marginLeft: "6px" }}>（テキストをコピーしてチャットを開きます）</span>
+                      <span style={{ color: GREEN, fontWeight: 700, fontSize: "13px" }}>{recipientName.trim()}</span>
                     </div>
                   )}
 
@@ -953,7 +876,7 @@
               <svg width="22" height="22" viewBox="0 0 24 24" fill={isComplete && !sending ? "white" : "#555"}>
                 <path d="M19.365 9.863c.349 0 .63.285.63.631 0 .345-.281.63-.63.63H17.61v1.125h1.755c.349 0 .63.283.63.63 0 .344-.281.629-.63.629h-2.386c-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63h2.386c.349 0 .63.285.63.63 0 .349-.281.63-.63.63H17.61v1.125h1.755zm-3.855 3.016c0 .27-.174.51-.432.596-.064.021-.133.031-.199.031-.211 0-.391-.09-.51-.25l-2.443-3.317v2.94c0 .344-.279.629-.631.629-.346 0-.626-.285-.626-.629V8.108c0-.27.173-.51.43-.595.06-.023.136-.033.194-.033.195 0 .375.104.495.254l2.462 3.33V8.108c0-.345.282-.63.63-.63.345 0 .63.285.63.63v4.771zm-5.741 0c0 .344-.282.629-.631.629-.345 0-.627-.285-.627-.629V8.108c0-.345.282-.63.627-.63.349 0 .631.285.631.63v4.771zm-2.466.629H4.917c-.345 0-.63-.285-.63-.629V8.108c0-.345.285-.63.63-.63.348 0 .63.285.63.63v4.141h1.756c.348 0 .629.283.629.63 0 .344-.281.629-.629.629M24 10.314C24 4.943 18.615.572 12 .572S0 4.943 0 10.314c0 4.811 4.27 8.842 10.035 9.608.391.082.923.258 1.058.59.12.301.079.766.038 1.08l-.164 1.02c-.045.301-.24 1.186 1.049.645 1.291-.539 6.916-4.078 9.436-6.975C23.176 14.393 24 12.458 24 10.314"/>
               </svg>
-              {sending ? "⏳ 送信中..." : sent ? "✅ 送信済み！再送する" : contacts.find(c => c.id === selectedContactId) ? `${contacts.find(c => c.id === selectedContactId).name} にLINEで送る` : "LINEで送る"}
+              {sending ? "⏳ 送信中..." : sent ? "✅ 送信済み！再送する" : recipientName.trim() ? `${recipientName.trim()} にLINEで送る` : "LINEで送る"}
             </button>
 
             {showClearPrompt && (
