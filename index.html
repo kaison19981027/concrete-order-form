@@ -40,6 +40,7 @@
     ];
 
     const REQUIRED_FIELDS = [
+      "atena",
       "month","day","hour","minute",
       "address","qty","car"
     ];
@@ -50,7 +51,7 @@
     const LOG_KEY            = "concrete_order_log_v1";
 
     const defaultForm = () => ({
-      name:"", tel:"", genba:"", address:"",
+      atena:"", name:"", tel:"", genba:"", address:"",
       month:"", day:"", weekday:"",
       hour:"", minute:"",
       mix1:"", mix2:"", mix3:"", mixType:"",
@@ -337,7 +338,8 @@
         const mm = form.minute !== "" ? String(form.minute).padStart(2, "0") : "　";
         const trucks = form.trucks ? `　${form.trucks}台` : "";
 
-        return `👷【施工者名】${form.name || "－"}
+        return `📄【伝票宛名】${form.atena || "－"}
+👷【施工者名】${form.name || "－"}
 📞【連絡先】${form.tel || "－"}
 🚧【現場名】${form.genba || "－"}${form.address ? `\n📍【住所】${form.address}` : ""}
 📅【施工日時】${form.month || "　"}月${form.day || "　"}日(${form.weekday || "　"}) ${hh}時${mm}分
@@ -519,6 +521,10 @@
             )}
 
             <Section icon="👷" title="基本情報">
+              <div style={{ marginBottom: "12px" }}>
+                <Label text="伝票宛名" required error={errors.atena} />
+                <StyledInput value={form.atena} onChange={e => set("atena", e.target.value)} placeholder="例）〇〇建設・〇〇工業" error={errors.atena} />
+              </div>
               <div style={{ marginBottom: "12px" }}>
                 <Label text="施工者名（任意）" />
                 <StyledInput value={form.name} onChange={e => set("name", e.target.value)} placeholder="例）〇〇建設・〇〇興業" />
